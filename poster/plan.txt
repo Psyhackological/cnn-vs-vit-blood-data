@@ -1,0 +1,34 @@
+# Plan
+
+Tytuł: Porównanie skuteczności sieci konwolucyjnych (CNN) oraz Vision Transformer (ViT) w klasyfikacji obrazów medycznych na przykładzie BloodMNIST
+1. Architektura CNN vs ViT (w Deep Learning)
+2. Metryki porównawcze (jak robić zestawienie modeli na danych medycznych)
+3. Przykładowe modele PyTorch (jak pobierać i używać pretrained modeli)
+4. Próbka danych BloodMNIST (ukazanie z czym mamy doczynienia)
+5. Produkcyjne narzędzia (np. biblioteki Python)
+6. Podsumowanie i konkluzja (co wynika z tego plakatu)
+
+## Forma
+
+Plakat A0 (2 kolumnowy, 3 punkty na lewo 3 punkty na prawo)
+
+## Pisane
+w Typst
+
+## Cel
+
+Celem projektu jest porównanie działania sieci CNN oraz Vision Transformer (ViT) w zadaniu klasyfikacji obrazów medycznych na zbiorze BloodMNIST, który zawiera oznaczone obrazy komórek krwi i jest wstępnie przetworzony.
+
+W ramach projektu oba modele zostaną wytrenowane w tych samych warunkach, a następnie porównane pod względem dokładności (accuracy), funkcji straty oraz czasu treningu.
+
+## Źródło danych
+
+https://zenodo.org/records/10519652
+
+We introduce MedMNIST, a large-scale MNIST-like collection of standardized biomedical images, including 12 datasets for 2D and 6 datasets for 3D. All images are pre-processed into 28x28 (2D) or 28x28x28 (3D) with the corresponding classification labels, so that no background knowledge is required for users. Covering primary data modalities in biomedical images, MedMNIST is designed to perform classification on lightweight 2D and 3D images with various data scales (from 100 to 100,000) and diverse tasks (binary/multi-class, ordinal regression and multi-label). The resulting dataset, consisting of approximately 708K 2D images and 10K 3D images in total, could support numerous research and educational purposes in biomedical image analysis, computer vision and machine learning. We benchmark several baseline methods on MedMNIST, including 2D / 3D neural networks and open-source / commercial AutoML tools. The data and code are publicly available at https://medmnist.com/.
+
+## Modele PyTorch
+
+https://github.com/huggingface/pytorch-image-models
+
+PyTorch Image Models (timm) is a collection of image models, layers, utilities, optimizers, schedulers, data-loaders / augmentations, and reference training / validation scripts that aim to pull together a wide variety of SOTA models with ability to reproduce ImageNet training results.
