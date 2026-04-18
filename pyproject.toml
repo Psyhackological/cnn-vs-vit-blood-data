@@ -1,0 +1,14 @@
+[project]
+name = "cnn-vs-vit-blood-data"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "medmnist>=3.0.2",
+    "numpy>=2.4.4",
+    "scikit-learn>=1.8.0",
+    "timm>=1.0.26",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "tqdm>=4.67.3",
+]
