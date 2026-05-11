@@ -1,0 +1,14 @@
+{
+  "tf_efficientnetv2_m.in21k": {
+    "accuracy": 0.9828,
+    "f1_macro": 0.982,
+    "auc_roc": 0.999,
+    "train_time_s": 2423.7
+  },
+  "vit_base_patch16_224.augreg_in21k": {
+    "accuracy": 0.9725,
+    "f1_macro": 0.9699,
+    "auc_roc": 0.9988,
+    "train_time_s": 2808.6
+  }
+}
