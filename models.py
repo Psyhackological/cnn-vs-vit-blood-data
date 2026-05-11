@@ -28,4 +28,3 @@ def get_model(model_name: str, num_classes: int, img_size: int) -> nn.Module:
     total_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"Model: {model_name} | Parametry: {total_params:.1f}M")
     return model
-
