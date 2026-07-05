@@ -15,12 +15,22 @@ IMG_SIZE_VIT = 224
 IMG_SIZE = 224
 
 MODELS = {
-    "tf_efficientnetv2_m.in21k": {
+    "tf_efficientnetv2_s.in21k": {
         "type": "cnn",
         "img_size": IMG_SIZE,
         "source": "timm",
     },
-    "vit_base_patch16_224.augreg_in21k": {
+    "deit3_small_patch16_224.fb_in22k_ft_in1k": {
+        "type": "vit",
+        "img_size": IMG_SIZE_VIT,
+        "source": "timm",
+    },
+    "convnextv2_base.fcmae": {
+        "type": "cnn",
+        "img_size": IMG_SIZE,
+        "source": "timm",
+    },
+    "eva02_base_patch14_224.mim_in22k": {
         "type": "vit",
         "img_size": IMG_SIZE_VIT,
         "source": "timm",
