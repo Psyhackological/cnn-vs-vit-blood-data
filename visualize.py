@@ -1,12 +1,14 @@
 # visualize.py – wykresy loss/accuracy i confusion matrix
 
 import os
+
 import matplotlib.pyplot as plt
 import numpy as np
+
 from evaluate import CLASS_NAMES
 
 
-def plot_history(history: dict, model_name: str, save_dir: str):
+def plot_history(history: dict[str, list[float]], model_name: str, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
     epochs = range(1, len(history["train_loss"]) + 1)
 

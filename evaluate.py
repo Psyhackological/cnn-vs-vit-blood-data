@@ -1,15 +1,16 @@
 # evaluate.py – metryki na zbiorze testowym
 
-import torch
+from typing import Any
+
 import numpy as np
+import torch
 from sklearn.metrics import (
     accuracy_score,
-    f1_score,
-    roc_auc_score,
     classification_report,
     confusion_matrix,
+    f1_score,
+    roc_auc_score,
 )
-
 
 CLASS_NAMES = [
     "Basophil",
@@ -23,17 +24,17 @@ CLASS_NAMES = [
 ]
 
 
-def evaluate_model(model, test_loader, device):
+def evaluate_model(model, test_loader, device) -> dict[str, Any]:
     model.eval()
     all_preds, all_labels, all_probs = [], [], []
 
     with torch.no_grad():
         for imgs, labels in test_loader:
             imgs = imgs.to(device)
-            labels = labels.squeeze().long()
+            labels = labels.reshape(-1).long()
 
             outputs = model(imgs)
-            probs = torch.softmax(outputs, dim=1).cpu().numpy()
+            probs = torch.softmax(outputs.float(), dim=1).cpu().numpy()
             preds = outputs.argmax(dim=1).cpu().numpy()
 
             all_preds.extend(preds)
@@ -46,13 +47,15 @@ def evaluate_model(model, test_loader, device):
 
     acc = accuracy_score(all_labels, all_preds)
     f1 = f1_score(all_labels, all_preds, average="macro")
-    auc = roc_auc_score(all_labels, all_probs, multi_class="ovr")
+    auc = float(
+        roc_auc_score(all_labels, all_probs, multi_class="ovr", average="macro")
+    )
     cm = confusion_matrix(all_labels, all_preds)
     report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES)
 
     print(f"\nTest Accuracy : {acc:.4f}")
     print(f"F1-score (macro): {f1:.4f}")
-    print(f"AUC-ROC (OvR)  : {auc:.4f}")
+    print(f"AUC-ROC (macro OvR): {auc:.4f}")
     print("\nClassification Report:")
     print(report)
 

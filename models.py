@@ -4,14 +4,27 @@ import timm
 import torch.nn as nn
 
 
+def _uses_absolute_pos_embed(model_name: str) -> bool:
+    transformer_prefixes = (
+        "beit",
+        "cait",
+        "deit",
+        "eva",
+        "flexivit",
+        "pit",
+        "swin",
+        "vit",
+    )
+    return model_name.startswith(transformer_prefixes)
+
+
 def get_model(model_name: str, num_classes: int, img_size: int) -> nn.Module:
     """
     Tworzy pre-trenowany model z timm i dostosowuje glowice klasyfikacyjna.
-    Obsluguje CNN (ResNet, EfficientNet) i ViT.
+    Dla modeli transformerowych przekazuje img_size, zeby timm mogl dopasowac
+    osadzenia pozycyjne do rozdzielczosci eksperymentu.
     """
-    is_vit = model_name.startswith("vit") or model_name.startswith("deit")
-
-    if is_vit:
+    if _uses_absolute_pos_embed(model_name):
         model = timm.create_model(
             model_name,
             pretrained=True,
