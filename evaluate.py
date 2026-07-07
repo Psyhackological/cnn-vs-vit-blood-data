@@ -1,30 +1,204 @@
-# evaluate.py – metryki na zbiorze testowym
+# evaluate.py – zunifikowane metryki dla zbiorow MedMNIST
 
-from typing import Any
+from __future__ import annotations
+
+import warnings
+from typing import Any, cast
 
 import numpy as np
 import torch
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
-    confusion_matrix,
+    average_precision_score,
+    balanced_accuracy_score,
+    cohen_kappa_score,
     f1_score,
+    matthews_corrcoef,
+    recall_score,
     roc_auc_score,
 )
 
-CLASS_NAMES = [
-    "Basophil",
-    "Eosinophil",
-    "Erythroblast",
-    "Immature Gran.",
-    "Lymphocyte",
-    "Monocyte",
-    "Neutrophil",
-    "Platelet",
+SCALAR_METRIC_NAMES = [
+    "accuracy",
+    "balanced_accuracy",
+    "f1_macro",
+    "auc_macro_ovr",
+    "ap_macro",
+    "mcc",
+    "cohen_kappa",
+    "ece",
+    "brier",
+    "min_per_class_recall",
+    "min_per_class_auc",
 ]
 
 
-def evaluate_model(model, test_loader, device) -> dict[str, Any]:
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except TypeError, ValueError:
+        return float("nan")
+
+
+def one_hot(labels: np.ndarray, num_classes: int) -> np.ndarray:
+    return np.eye(num_classes, dtype=np.float64)[labels.astype(int)]
+
+
+def macro_ovr_auc(labels: np.ndarray, probs: np.ndarray) -> float:
+    try:
+        if probs.shape[1] == 2:
+            return _safe_float(roc_auc_score(labels, probs[:, 1]))
+        return _safe_float(
+            roc_auc_score(labels, probs, multi_class="ovr", average="macro")
+        )
+    except ValueError:
+        return float("nan")
+
+
+def macro_average_precision(labels: np.ndarray, probs: np.ndarray) -> float:
+    try:
+        return _safe_float(
+            average_precision_score(
+                one_hot(labels, probs.shape[1]), probs, average="macro"
+            )
+        )
+    except ValueError:
+        return float("nan")
+
+
+def per_class_recall(
+    labels: np.ndarray, preds: np.ndarray, num_classes: int
+) -> np.ndarray:
+    return np.asarray(
+        recall_score(
+            labels,
+            preds,
+            labels=list(range(num_classes)),
+            average=cast(Any, None),
+            zero_division=cast(Any, 0),
+        ),
+        dtype=np.float64,
+    )
+
+
+def per_class_f1(labels: np.ndarray, preds: np.ndarray, num_classes: int) -> np.ndarray:
+    return np.asarray(
+        f1_score(
+            labels,
+            preds,
+            labels=list(range(num_classes)),
+            average=cast(Any, None),
+            zero_division=cast(Any, 0),
+        ),
+        dtype=np.float64,
+    )
+
+
+def per_class_ovr_auc(labels: np.ndarray, probs: np.ndarray) -> np.ndarray:
+    aucs = []
+    for class_idx in range(probs.shape[1]):
+        try:
+            aucs.append(
+                _safe_float(
+                    roc_auc_score(
+                        (labels == class_idx).astype(int), probs[:, class_idx]
+                    )
+                )
+            )
+        except ValueError:
+            aucs.append(float("nan"))
+    return np.asarray(aucs, dtype=np.float64)
+
+
+def expected_calibration_error(
+    labels: np.ndarray,
+    probs: np.ndarray,
+    n_bins: int = 15,
+) -> float:
+    confidences = probs.max(axis=1)
+    predictions = probs.argmax(axis=1)
+    correctness = (predictions == labels).astype(np.float64)
+    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+
+    for bin_idx in range(n_bins):
+        left, right = bin_edges[bin_idx], bin_edges[bin_idx + 1]
+        in_bin = (confidences >= left) & (confidences < right)
+        if bin_idx == n_bins - 1:
+            in_bin = (confidences >= left) & (confidences <= right)
+        if np.any(in_bin):
+            ece += in_bin.mean() * abs(
+                correctness[in_bin].mean() - confidences[in_bin].mean()
+            )
+
+    return _safe_float(ece)
+
+
+def brier_score_multiclass(labels: np.ndarray, probs: np.ndarray) -> float:
+    labels_oh = one_hot(labels, probs.shape[1])
+    return _safe_float(np.mean(np.mean((probs - labels_oh) ** 2, axis=1)))
+
+
+def scalar_metrics(
+    labels: np.ndarray,
+    preds: np.ndarray,
+    probs: np.ndarray,
+    ece_bins: int = 15,
+) -> dict[str, float]:
+    recalls = per_class_recall(labels, preds, probs.shape[1])
+    aucs = per_class_ovr_auc(labels, probs)
+    return {
+        "accuracy": _safe_float(accuracy_score(labels, preds)),
+        "balanced_accuracy": _safe_float(balanced_accuracy_score(labels, preds)),
+        "f1_macro": _safe_float(
+            f1_score(labels, preds, average="macro", zero_division=cast(Any, 0))
+        ),
+        "auc_macro_ovr": macro_ovr_auc(labels, probs),
+        "ap_macro": macro_average_precision(labels, probs),
+        "mcc": _safe_float(matthews_corrcoef(labels, preds)),
+        "cohen_kappa": _safe_float(cohen_kappa_score(labels, preds)),
+        "ece": expected_calibration_error(labels, probs, n_bins=ece_bins),
+        "brier": brier_score_multiclass(labels, probs),
+        "min_per_class_recall": _safe_float(np.nanmin(recalls)),
+        "min_per_class_auc": _safe_float(np.nanmin(aucs)),
+    }
+
+
+def bootstrap_scalar_cis(
+    labels: np.ndarray,
+    preds: np.ndarray,
+    probs: np.ndarray,
+    ece_bins: int = 15,
+    n_resamples: int = 1000,
+    seed: int = 42,
+) -> dict[str, tuple[float, float]]:
+    rng = np.random.default_rng(seed)
+    values = {name: [] for name in SCALAR_METRIC_NAMES}
+
+    for _ in range(n_resamples):
+        idx = rng.integers(0, len(labels), size=len(labels))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            sample_metrics = scalar_metrics(
+                labels[idx], preds[idx], probs[idx], ece_bins=ece_bins
+            )
+        for name, value in sample_metrics.items():
+            if not np.isnan(value):
+                values[name].append(value)
+
+    cis: dict[str, tuple[float, float]] = {}
+    for name in SCALAR_METRIC_NAMES:
+        if values[name]:
+            lo, hi = np.percentile(np.asarray(values[name]), [2.5, 97.5])
+            cis[name] = (_safe_float(lo), _safe_float(hi))
+        else:
+            cis[name] = (float("nan"), float("nan"))
+    return cis
+
+
+def collect_predictions(
+    model, test_loader, device
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     model.eval()
     all_preds, all_labels, all_probs = [], [], []
 
@@ -41,28 +215,57 @@ def evaluate_model(model, test_loader, device) -> dict[str, Any]:
             all_labels.extend(labels.numpy())
             all_probs.extend(probs)
 
-    all_preds = np.array(all_preds)
-    all_labels = np.array(all_labels)
-    all_probs = np.array(all_probs)
-
-    acc = accuracy_score(all_labels, all_preds)
-    f1 = f1_score(all_labels, all_preds, average="macro")
-    auc = float(
-        roc_auc_score(all_labels, all_probs, multi_class="ovr", average="macro")
+    return (
+        np.asarray(all_labels, dtype=np.int64),
+        np.asarray(all_preds, dtype=np.int64),
+        np.asarray(all_probs, dtype=np.float64),
     )
-    cm = confusion_matrix(all_labels, all_preds)
-    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES)
 
-    print(f"\nTest Accuracy : {acc:.4f}")
-    print(f"F1-score (macro): {f1:.4f}")
-    print(f"AUC-ROC (macro OvR): {auc:.4f}")
-    print("\nClassification Report:")
-    print(report)
+
+def evaluate_model(
+    model,
+    test_loader,
+    device,
+    class_names: list[str],
+    ece_bins: int = 15,
+    bootstrap_resamples: int = 1000,
+    bootstrap_seed: int = 42,
+) -> dict[str, Any]:
+    labels, preds, probs = collect_predictions(model, test_loader, device)
+    num_classes = len(class_names)
+    metrics = scalar_metrics(labels, preds, probs, ece_bins=ece_bins)
+    cis = bootstrap_scalar_cis(
+        labels,
+        preds,
+        probs,
+        ece_bins=ece_bins,
+        n_resamples=bootstrap_resamples,
+        seed=bootstrap_seed,
+    )
+    per_class = {
+        "recall": per_class_recall(labels, preds, num_classes),
+        "f1": per_class_f1(labels, preds, num_classes),
+        "auc_ovr": per_class_ovr_auc(labels, probs),
+    }
+
+    print("\nUnified test metrics:")
+    for name in SCALAR_METRIC_NAMES:
+        lo, hi = cis[name]
+        print(f"  {name:<22}: {metrics[name]:.4f}  95% CI [{lo:.4f}, {hi:.4f}]")
+    print("\nPer-class metrics:")
+    for idx, class_name in enumerate(class_names):
+        print(
+            f"  {idx:02d} {class_name:<42} "
+            f"recall={per_class['recall'][idx]:.4f} "
+            f"f1={per_class['f1'][idx]:.4f} "
+            f"auc_ovr={per_class['auc_ovr'][idx]:.4f}"
+        )
 
     return {
-        "accuracy": acc,
-        "f1": f1,
-        "auc": auc,
-        "confusion_matrix": cm,
-        "report": report,
+        "metrics": metrics,
+        "cis": cis,
+        "per_class": per_class,
+        "labels": labels,
+        "preds": preds,
+        "probs": probs,
     }

@@ -11,15 +11,36 @@ LR = 1e-4
 WEIGHT_DECAY = 1e-2
 ACCUMULATION_STEPS = 1
 EARLY_STOPPING_PATIENCE = 7
-NUM_CLASSES = 8
 IMG_SIZE_CNN = 224
 IMG_SIZE_VIT = 224
 IMG_SIZE = 224
+ECE_BINS = 15
+BOOTSTRAP_RESAMPLES = 1000
+BOOTSTRAP_SEED = 42
+
+DATASETS = {
+    "bloodmnist": {
+        "img_size": IMG_SIZE,
+        "sort_classes_by_frequency": False,
+    },
+    "dermamnist": {
+        "img_size": IMG_SIZE,
+        "sort_classes_by_frequency": True,
+    },
+    "pneumoniamnist": {
+        "img_size": IMG_SIZE,
+        "sort_classes_by_frequency": False,
+    },
+    "pathmnist": {
+        "img_size": IMG_SIZE,
+        "sort_classes_by_frequency": False,
+    },
+}
 
 MODELS = {
     "tf_efficientnetv2_s.in21k": {
         "type": "cnn",
-        "img_size": IMG_SIZE,
+        "img_size": IMG_SIZE_CNN,
         "source": "timm",
     },
     "deit3_small_patch16_224.fb_in22k_ft_in1k": {
@@ -29,7 +50,7 @@ MODELS = {
     },
     "convnextv2_base.fcmae": {
         "type": "cnn",
-        "img_size": IMG_SIZE,
+        "img_size": IMG_SIZE_CNN,
         "source": "timm",
     },
     "eva02_base_patch14_224.mim_in22k": {

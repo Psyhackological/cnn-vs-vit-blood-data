@@ -18,6 +18,8 @@ def _cuda_amp_dtype() -> torch.dtype:
 
 def _macro_ovr_auc(labels: torch.Tensor, probs: torch.Tensor) -> float:
     try:
+        if probs.shape[1] == 2:
+            return float(roc_auc_score(labels.numpy(), probs[:, 1].numpy()))
         return float(
             roc_auc_score(
                 labels.numpy(),
