@@ -30,7 +30,7 @@ from dataset import get_dataset_metadata, get_loaders
 from evaluate import SCALAR_METRIC_NAMES, evaluate_model
 from models import get_model
 from train import run_training
-from visualize import plot_diagnostic_panel, plot_history
+from visualize import plot_diagnostics, plot_history
 
 
 def _safe_name(name: str) -> str:
@@ -172,7 +172,7 @@ def main() -> None:
                 else None
             )
             plot_history(history, model_name, dataset_key, RESULTS_DIR)
-            plot_diagnostic_panel(
+            plot_diagnostics(
                 eval_result["labels"],
                 eval_result["preds"],
                 eval_result["probs"],

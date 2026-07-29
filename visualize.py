@@ -24,8 +24,8 @@ def _safe_name(name: str) -> str:
 
 def _save(fig: plt.Figure, path_no_ext: str, dpi: int = 150) -> None:
     fig.savefig(f"{path_no_ext}.png", dpi=dpi)
-    fig.savefig(f"{path_no_ext}.pdf")
-    print(f"Zapisano: {path_no_ext}.png oraz {path_no_ext}.pdf")
+    fig.savefig(f"{path_no_ext}.svg")
+    print(f"Zapisano: {path_no_ext}.png oraz {path_no_ext}.svg")
 
 
 def plot_history(
@@ -229,7 +229,7 @@ def _plot_reliability(
     )
 
 
-def plot_diagnostic_panel(
+def plot_diagnostics(
     labels: np.ndarray,
     preds: np.ndarray,
     probs: np.ndarray,
@@ -241,15 +241,21 @@ def plot_diagnostic_panel(
     class_order: list[int] | None = None,
 ) -> None:
     os.makedirs(save_dir, exist_ok=True)
-    fig, axes = plt.subplots(2, 2, figsize=(10, 10), constrained_layout=True)
-    fig.suptitle(f"Diagnostics – {dataset_name} – {model_name}", fontsize=14)
-    _plot_confusion(axes[0, 0], labels, preds, class_names, class_order)
-    _plot_roc(axes[0, 1], labels, probs, class_names)
-    _plot_pr(axes[1, 0], labels, probs, class_names)
-    _plot_reliability(axes[1, 1], labels, probs, ece_bins)
-    path = os.path.join(
-        save_dir,
-        f"{_safe_name(dataset_name)}_{_safe_name(model_name)}_diagnostic_panel",
+    prefix = os.path.join(
+        save_dir, f"{_safe_name(dataset_name)}_{_safe_name(model_name)}"
     )
-    _save(fig, path)
-    plt.close(fig)
+
+    plots = (
+        (
+            "confusion_matrix",
+            lambda ax: _plot_confusion(ax, labels, preds, class_names, class_order),
+        ),
+        ("roc", lambda ax: _plot_roc(ax, labels, probs, class_names)),
+        ("pr", lambda ax: _plot_pr(ax, labels, probs, class_names)),
+        ("reliability", lambda ax: _plot_reliability(ax, labels, probs, ece_bins)),
+    )
+    for suffix, draw in plots:
+        fig, ax = plt.subplots(figsize=(5, 5), constrained_layout=True)
+        draw(ax)
+        _save(fig, f"{prefix}_{suffix}")
+        plt.close(fig)
