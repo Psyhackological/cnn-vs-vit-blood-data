@@ -24,17 +24,15 @@ from config import (
     MODELS,
     NUM_EPOCHS,
     RESULTS_DIR,
+    SEED,
     WEIGHT_DECAY,
 )
 from dataset import get_dataset_metadata, get_loaders
 from evaluate import SCALAR_METRIC_NAMES, evaluate_model
 from models import get_model
 from train import run_training
+from utils import safe_name, set_seed
 from visualize import plot_diagnostics, plot_history
-
-
-def _safe_name(name: str) -> str:
-    return name.replace("/", "_").replace(" ", "_")
 
 
 def _jsonable(value: Any) -> Any:
@@ -123,21 +121,22 @@ def main() -> None:
         )
 
         for model_name, model_cfg in MODELS.items():
-            torch.cuda.empty_cache()
-            gc.collect()
             print(
                 f"\n{'=' * 70}\n  Dataset: {dataset_key} | Model: {model_name}\n{'=' * 70}"
             )
 
+            # Kazdy przebieg startuje z tego samego ziarna, wiec wynik modelu
+            # nie zalezy od jego pozycji w petli.
+            set_seed(SEED)
             img_size = int(dataset_cfg.get("img_size", model_cfg["img_size"]))
             model = get_model(model_name, metadata_hint.num_classes, img_size).to(
                 device
             )
             train_loader, val_loader, test_loader, metadata = get_loaders(
-                dataset_key, model, img_size, BATCH_SIZE
+                dataset_key, model, img_size, BATCH_SIZE, seed=SEED
             )
 
-            prefix = f"{_safe_name(dataset_key)}_{_safe_name(model_name)}"
+            prefix = f"{safe_name(dataset_key)}_{safe_name(model_name)}"
             checkpoint_path = os.path.join(RESULTS_DIR, f"{prefix}_best.pth")
             t0 = time.time()
             history = run_training(
@@ -197,6 +196,10 @@ def main() -> None:
             summary_rows.append(row)
             with open(os.path.join(RESULTS_DIR, f"{prefix}_metrics.json"), "w") as f:
                 json.dump(_jsonable(row), f, indent=2)
+
+            del model, train_loader, val_loader, test_loader
+            torch.cuda.empty_cache()
+            gc.collect()
 
     _print_summary(summary_rows)
     with open(os.path.join(RESULTS_DIR, "summary.json"), "w") as f:

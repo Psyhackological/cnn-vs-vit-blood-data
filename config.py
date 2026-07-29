@@ -11,28 +11,27 @@ LR = 1e-4
 WEIGHT_DECAY = 1e-2
 ACCUMULATION_STEPS = 1
 EARLY_STOPPING_PATIENCE = 7
-IMG_SIZE_CNN = 224
-IMG_SIZE_VIT = 224
-IMG_SIZE = 224
+IMG_SIZE = 224  # MedMNIST udostepnia natywnie tylko 28 / 64 / 128 / 224
+IMG_SIZE_CNN = IMG_SIZE  # CNN przyjmuja dowolny rozmiar wejscia
+IMG_SIZE_VIT = IMG_SIZE  # ViT: timm interpoluje osadzenia pozycyjne pod ten rozmiar
 ECE_BINS = 15
 BOOTSTRAP_RESAMPLES = 1000
 BOOTSTRAP_SEED = 42
+SEED = 42  # ziarno treningu: init glowicy, kolejnosc batchy, augmentacja
 
+# "img_size" jest opcjonalne – ustaw je tylko, gdy dany zbior ma byc trenowany
+# w innej rozdzielczosci niz deklaruje model w MODELS.
 DATASETS = {
     "bloodmnist": {
-        "img_size": IMG_SIZE,
         "sort_classes_by_frequency": False,
     },
     "dermamnist": {
-        "img_size": IMG_SIZE,
         "sort_classes_by_frequency": True,
     },
     "pneumoniamnist": {
-        "img_size": IMG_SIZE,
         "sort_classes_by_frequency": False,
     },
     "pathmnist": {
-        "img_size": IMG_SIZE,
         "sort_classes_by_frequency": False,
     },
 }

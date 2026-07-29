@@ -44,8 +44,9 @@
 **Protokół eksperymentu:**
 - Optimizer: AdamW, lr=1e-4, weight_decay=1e-2
 - Scheduler: CosineAnnealingLR
-- Batch size: 64, Epoki: 30
-- Augmentacja: RandomHorizontalFlip, RandomCrop, Normalize
+- Batch size: 16, Epoki: 30 (early stopping: patience 7 epok wg Val AUC)
+- Augmentacja (`timm.create_transform`): RandomResizedCrop (scale 0.8–1.0), RandomHorizontalFlip (p=0.5), Normalize
+- Rozdzielczosc: 224×224, ziarno losowosci: 42
 
 ---
 

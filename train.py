@@ -6,8 +6,9 @@ import math
 from typing import Any
 
 import torch
-from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
+
+from evaluate import macro_ovr_auc
 
 
 def _cuda_amp_dtype() -> torch.dtype:
@@ -17,26 +18,16 @@ def _cuda_amp_dtype() -> torch.dtype:
 
 
 def _macro_ovr_auc(labels: torch.Tensor, probs: torch.Tensor) -> float:
-    try:
-        if probs.shape[1] == 2:
-            return float(roc_auc_score(labels.numpy(), probs[:, 1].numpy()))
-        return float(
-            roc_auc_score(
-                labels.numpy(),
-                probs.numpy(),
-                multi_class="ovr",
-                average="macro",
-            )
-        )
-    except ValueError as exc:
+    auc = macro_ovr_auc(labels.numpy(), probs.numpy())
+    if math.isnan(auc):
         class_counts = torch.bincount(labels, minlength=probs.shape[1]).tolist()
         row_sums = probs.sum(dim=1)
         print(
             "Val AUC unavailable: "
-            f"{exc} | class_counts={class_counts} | "
+            f"class_counts={class_counts} | "
             f"prob_row_sum_range=({row_sums.min().item():.6f}, {row_sums.max().item():.6f})"
         )
-        return float("nan")
+    return auc
 
 
 def train_one_epoch(

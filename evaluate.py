@@ -36,7 +36,7 @@ SCALAR_METRIC_NAMES = [
 def _safe_float(value: Any) -> float:
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return float("nan")
 
 
@@ -110,28 +110,44 @@ def per_class_ovr_auc(labels: np.ndarray, probs: np.ndarray) -> np.ndarray:
     return np.asarray(aucs, dtype=np.float64)
 
 
+def calibration_bins(
+    labels: np.ndarray,
+    probs: np.ndarray,
+    n_bins: int = 15,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Dzieli predykcje na kubelki wg pewnosci i zwraca (accuracy, pewnosc, licznosc)
+    dla kazdego kubelka. Ostatni kubelek jest domkniety z prawej strony, wiec
+    pewnosc rowna 1.0 tez jest liczona. Puste kubelki maja NaN w dwoch pierwszych.
+    """
+    confidences = probs.max(axis=1)
+    correctness = (probs.argmax(axis=1) == labels).astype(np.float64)
+    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    accs = np.full(n_bins, np.nan)
+    confs = np.full(n_bins, np.nan)
+    counts = np.zeros(n_bins, dtype=int)
+
+    for bin_idx, (left, right) in enumerate(zip(bin_edges[:-1], bin_edges[1:])):
+        in_bin = (confidences >= left) & (confidences < right)
+        if bin_idx == n_bins - 1:
+            in_bin = (confidences >= left) & (confidences <= right)
+        counts[bin_idx] = int(in_bin.sum())
+        if counts[bin_idx]:
+            accs[bin_idx] = correctness[in_bin].mean()
+            confs[bin_idx] = confidences[in_bin].mean()
+
+    return accs, confs, counts
+
+
 def expected_calibration_error(
     labels: np.ndarray,
     probs: np.ndarray,
     n_bins: int = 15,
 ) -> float:
-    confidences = probs.max(axis=1)
-    predictions = probs.argmax(axis=1)
-    correctness = (predictions == labels).astype(np.float64)
-    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
-    ece = 0.0
-
-    for bin_idx in range(n_bins):
-        left, right = bin_edges[bin_idx], bin_edges[bin_idx + 1]
-        in_bin = (confidences >= left) & (confidences < right)
-        if bin_idx == n_bins - 1:
-            in_bin = (confidences >= left) & (confidences <= right)
-        if np.any(in_bin):
-            ece += in_bin.mean() * abs(
-                correctness[in_bin].mean() - confidences[in_bin].mean()
-            )
-
-    return _safe_float(ece)
+    accs, confs, counts = calibration_bins(labels, probs, n_bins=n_bins)
+    filled = counts > 0
+    weights = counts[filled] / len(labels)
+    return _safe_float(np.sum(weights * np.abs(accs[filled] - confs[filled])))
 
 
 def brier_score_multiclass(labels: np.ndarray, probs: np.ndarray) -> float:

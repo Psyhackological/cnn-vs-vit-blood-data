@@ -14,6 +14,8 @@ from timm.data.transforms_factory import create_transform
 from torch import nn
 from torch.utils.data import DataLoader
 
+from utils import seed_worker
+
 SUPPORTED_MEDMNIST_SIZES = {28, 64, 128, 224}
 
 
@@ -110,6 +112,7 @@ def get_loaders(
     model: nn.Module,
     img_size: int,
     batch_size: int,
+    seed: int | None = None,
 ) -> tuple[DataLoader[Any], DataLoader[Any], DataLoader[Any], DatasetMetadata]:
     train_tf, val_tf, data_cfg = get_transforms(model, img_size)
     input_h, input_w = _resolve_spatial_size(data_cfg["input_size"])
@@ -152,12 +155,20 @@ def get_loaders(
     metadata = get_dataset_metadata(dataset_key, np.asarray(train_ds.labels))
 
     pin_memory = torch.cuda.is_available()
+    if seed is None:
+        generator = None
+    else:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
         pin_memory=pin_memory,
+        generator=generator,
+        worker_init_fn=None if seed is None else seed_worker,
     )
     val_loader = DataLoader(
         val_ds,

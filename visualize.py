@@ -15,11 +15,13 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from evaluate import brier_score_multiclass, expected_calibration_error, one_hot
-
-
-def _safe_name(name: str) -> str:
-    return name.replace("/", "_").replace(" ", "_")
+from evaluate import (
+    brier_score_multiclass,
+    calibration_bins,
+    expected_calibration_error,
+    one_hot,
+)
+from utils import safe_name
 
 
 def _save(fig: plt.Figure, path_no_ext: str, dpi: int = 150) -> None:
@@ -55,7 +57,7 @@ def plot_history(
     axes[2].legend()
 
     path = os.path.join(
-        save_dir, f"{_safe_name(dataset_name)}_{_safe_name(model_name)}_history"
+        save_dir, f"{safe_name(dataset_name)}_{safe_name(model_name)}_history"
     )
     _save(fig, path)
     plt.close(fig)
@@ -188,24 +190,11 @@ def _plot_reliability(
     probs: np.ndarray,
     ece_bins: int,
 ) -> None:
-    conf = probs.max(axis=1)
-    correct = (probs.argmax(axis=1) == labels).astype(float)
     edges = np.linspace(0.0, 1.0, ece_bins + 1)
     centers = (edges[:-1] + edges[1:]) / 2.0
-    accs = np.full(ece_bins, np.nan)
-    confs = np.full(ece_bins, np.nan)
-    counts = np.zeros(ece_bins, dtype=int)
+    accs, confs, counts = calibration_bins(labels, probs, n_bins=ece_bins)
 
-    for i, (left, right) in enumerate(zip(edges[:-1], edges[1:])):
-        mask = (conf >= left) & (conf < right)
-        if i == ece_bins - 1:
-            mask = (conf >= left) & (conf <= right)
-        counts[i] = int(mask.sum())
-        if np.any(mask):
-            accs[i] = correct[mask].mean()
-            confs[i] = conf[mask].mean()
-
-    valid = ~np.isnan(accs)
+    valid = counts > 0
     ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1)
     ax.plot(confs[valid], accs[valid], marker="o", linewidth=2)
     ax.set(
@@ -242,7 +231,7 @@ def plot_diagnostics(
 ) -> None:
     os.makedirs(save_dir, exist_ok=True)
     prefix = os.path.join(
-        save_dir, f"{_safe_name(dataset_name)}_{_safe_name(model_name)}"
+        save_dir, f"{safe_name(dataset_name)}_{safe_name(model_name)}"
     )
 
     plots = (
