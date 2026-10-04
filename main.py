@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import os
 import time
+import zipfile
 from typing import Any
 
 import numpy as np
@@ -23,6 +25,7 @@ from config import (
     LR,
     MODELS,
     NUM_EPOCHS,
+    NUM_WORKERS,
     RESULTS_DIR,
     SEED,
     WEIGHT_DECAY,
@@ -32,14 +35,15 @@ from evaluate import SCALAR_METRIC_NAMES, evaluate_model
 from models import get_model
 from train import run_training
 from utils import safe_name, set_seed
-from visualize import plot_diagnostics, plot_history
 
 
 def _jsonable(value: Any) -> Any:
     if isinstance(value, np.ndarray):
-        return value.tolist()
+        return _jsonable(value.tolist())
     if isinstance(value, np.generic):
-        return value.item()
+        return _jsonable(value.item())
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -60,6 +64,8 @@ def _metric_row(
     metadata,
     history: dict[str, Any],
     checkpoint_path: str,
+    predictions_path: str,
+    history_path: str,
     train_time: float,
     eval_result: dict[str, Any],
 ) -> dict[str, Any]:
@@ -71,6 +77,8 @@ def _metric_row(
         "best_epoch": history["best_epoch"],
         "best_val_auc_macro_ovr": _round(history["best_val_auc"]),
         "checkpoint": checkpoint_path,
+        "test_predictions_file": predictions_path,
+        "training_history_file": history_path,
         "train_time_s": round(train_time, 1),
         "per_class": {
             "class_names": metadata.class_names,
@@ -81,6 +89,42 @@ def _metric_row(
         row[name] = _round(eval_result["metrics"][name])
         row[f"{name}_ci"] = [_round(v) for v in eval_result["cis"][name]]
     return row
+
+
+def _load_cached_run(
+    metrics_path: str,
+    predictions_path: str,
+    history_path: str,
+    dataset_key: str,
+    model_name: str,
+) -> dict[str, Any] | None:
+    if not all(os.path.isfile(path) for path in (metrics_path, predictions_path, history_path)):
+        return None
+
+    try:
+        with open(metrics_path) as f:
+            row = json.load(f)
+        with open(history_path) as f:
+            history = json.load(f)
+        with np.load(predictions_path, allow_pickle=False) as predictions:
+            if not {"labels", "preds", "probs", "class_names"}.issubset(predictions.files):
+                return None
+
+        if row.get("dataset") != dataset_key or row.get("model") != model_name:
+            return None
+        required_metrics = {
+            *SCALAR_METRIC_NAMES,
+            *(f"{name}_ci" for name in SCALAR_METRIC_NAMES),
+            "per_class",
+        }
+        if not required_metrics.issubset(row):
+            return None
+        if not {"train_loss", "val_loss", "train_acc", "val_acc"}.issubset(history):
+            return None
+        return row
+    except (OSError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+        print(f"Ignoring invalid cached results for {dataset_key}/{model_name}: {exc}")
+        return None
 
 
 def _print_summary(rows: list[dict[str, Any]]) -> None:
@@ -125,19 +169,44 @@ def main() -> None:
                 f"\n{'=' * 70}\n  Dataset: {dataset_key} | Model: {model_name}\n{'=' * 70}"
             )
 
-            # Kazdy przebieg startuje z tego samego ziarna, wiec wynik modelu
-            # nie zalezy od jego pozycji w petli.
+            prefix = f"{safe_name(dataset_key)}_{safe_name(model_name)}"
+            checkpoint_path = os.path.join(RESULTS_DIR, f"{prefix}_best.pth")
+            resume_path = os.path.join(RESULTS_DIR, f"{prefix}_resume.pt")
+            predictions_path = os.path.join(RESULTS_DIR, f"{prefix}_test_predictions.npz")
+            history_path = os.path.join(RESULTS_DIR, f"{prefix}_history.json")
+            metrics_path = os.path.join(RESULTS_DIR, f"{prefix}_metrics.json")
+
+            cached_row = _load_cached_run(
+                metrics_path,
+                predictions_path,
+                history_path,
+                dataset_key,
+                model_name,
+            )
+            if cached_row is not None:
+                print(f"Using cached results; skipping train/evaluation: {prefix}")
+                summary_rows.append(cached_row)
+                continue
+
+            # Reset the seed so each uncached run is independent of loop order.
             set_seed(SEED)
-            img_size = int(dataset_cfg.get("img_size", model_cfg["img_size"]))
+            dataset_img_size = dataset_cfg.get("img_size")
+            img_size = int(
+                model_cfg["img_size"]
+                if dataset_img_size is None
+                else dataset_img_size
+            )
             model = get_model(model_name, metadata_hint.num_classes, img_size).to(
                 device
             )
             train_loader, val_loader, test_loader, metadata = get_loaders(
-                dataset_key, model, img_size, BATCH_SIZE, seed=SEED
+                dataset_key,
+                model,
+                img_size,
+                BATCH_SIZE,
+                seed=SEED,
+                num_workers=NUM_WORKERS,
             )
-
-            prefix = f"{safe_name(dataset_key)}_{safe_name(model_name)}"
-            checkpoint_path = os.path.join(RESULTS_DIR, f"{prefix}_best.pth")
             t0 = time.time()
             history = run_training(
                 model,
@@ -150,8 +219,22 @@ def main() -> None:
                 checkpoint_path=checkpoint_path,
                 early_stopping_patience=EARLY_STOPPING_PATIENCE,
                 accumulation_steps=ACCUMULATION_STEPS,
+                resume_path=resume_path,
+                history_path=history_path,
+                resume_config={
+                    "dataset": dataset_key,
+                    "model": model_name,
+                    "img_size": img_size,
+                    "batch_size": BATCH_SIZE,
+                    "num_epochs": NUM_EPOCHS,
+                    "lr": LR,
+                    "weight_decay": WEIGHT_DECAY,
+                    "accumulation_steps": ACCUMULATION_STEPS,
+                    "early_stopping_patience": EARLY_STOPPING_PATIENCE,
+                    "seed": SEED,
+                },
             )
-            train_time = time.time() - t0
+            train_time = history.get("train_time_s", time.time() - t0)
 
             if os.path.exists(checkpoint_path):
                 model.load_state_dict(torch.load(checkpoint_path, map_location=device))
@@ -165,23 +248,15 @@ def main() -> None:
                 bootstrap_resamples=BOOTSTRAP_RESAMPLES,
                 bootstrap_seed=BOOTSTRAP_SEED,
             )
-            class_order = (
-                metadata.class_frequency_order
-                if dataset_cfg.get("sort_classes_by_frequency")
-                else None
+            np.savez_compressed(
+                predictions_path,
+                labels=eval_result["labels"],
+                preds=eval_result["preds"],
+                probs=eval_result["probs"],
+                class_names=np.asarray(metadata.class_names, dtype=str),
             )
-            plot_history(history, model_name, dataset_key, RESULTS_DIR)
-            plot_diagnostics(
-                eval_result["labels"],
-                eval_result["preds"],
-                eval_result["probs"],
-                metadata.class_names,
-                model_name,
-                dataset_key,
-                RESULTS_DIR,
-                ece_bins=ECE_BINS,
-                class_order=class_order,
-            )
+            with open(history_path, "w") as f:
+                json.dump(_jsonable(history), f, indent=2, allow_nan=False)
 
             row = _metric_row(
                 dataset_key,
@@ -190,12 +265,14 @@ def main() -> None:
                 metadata,
                 history,
                 checkpoint_path,
+                predictions_path,
+                history_path,
                 train_time,
                 eval_result,
             )
             summary_rows.append(row)
-            with open(os.path.join(RESULTS_DIR, f"{prefix}_metrics.json"), "w") as f:
-                json.dump(_jsonable(row), f, indent=2)
+            with open(metrics_path, "w") as f:
+                json.dump(_jsonable(row), f, indent=2, allow_nan=False)
 
             del model, train_loader, val_loader, test_loader
             torch.cuda.empty_cache()
@@ -203,7 +280,7 @@ def main() -> None:
 
     _print_summary(summary_rows)
     with open(os.path.join(RESULTS_DIR, "summary.json"), "w") as f:
-        json.dump(_jsonable(summary_rows), f, indent=2)
+        json.dump(_jsonable(summary_rows), f, indent=2, allow_nan=False)
     print(f"\nWyniki zapisane w: {RESULTS_DIR}/")
 
 
