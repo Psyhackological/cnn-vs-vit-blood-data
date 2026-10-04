@@ -6,6 +6,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 DEVICE = "cuda"
 BATCH_SIZE = 16  # 16 bezpieczne dla 52.9M modelu na 8GB VRAM
+NUM_WORKERS = 0  # avoid forkserver pickling the large 224px MedMNIST arrays
 NUM_EPOCHS = 30
 LR = 1e-4
 WEIGHT_DECAY = 1e-2
