@@ -153,7 +153,13 @@ def _print_summary(rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    device = torch.device(DEVICE if torch.cuda.is_available() else "cpu")
+    if DEVICE.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(
+            f"DEVICE={DEVICE!r} is configured, but CUDA is unavailable. "
+            "Restore the GPU/driver before continuing. This guard prevents pending runs "
+            "from silently starting on CPU."
+        )
+    device = torch.device(DEVICE)
     os.makedirs(RESULTS_DIR, exist_ok=True)
     print(f"Urzadzenie: {device}\n")
     summary_rows: list[dict[str, Any]] = []

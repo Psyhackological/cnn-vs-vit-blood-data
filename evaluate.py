@@ -217,13 +217,23 @@ def collect_predictions(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     model.eval()
     all_preds, all_labels, all_probs = [], [], []
+    amp_dtype = (
+        torch.bfloat16
+        if device.type == "cuda" and torch.cuda.is_bf16_supported()
+        else torch.float16
+    )
 
-    with torch.no_grad():
+    with torch.inference_mode():
         for imgs, labels in test_loader:
-            imgs = imgs.to(device)
+            imgs = imgs.to(device, non_blocking=device.type == "cuda")
             labels = labels.reshape(-1).long()
 
-            outputs = model(imgs)
+            with torch.autocast(
+                device_type=device.type,
+                dtype=amp_dtype,
+                enabled=device.type == "cuda",
+            ):
+                outputs = model(imgs)
             probs = torch.softmax(outputs.float(), dim=1).cpu().numpy()
             preds = outputs.argmax(dim=1).cpu().numpy()
 
